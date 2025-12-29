@@ -166,7 +166,7 @@ Output:
 
 ## Important Notes
 
-- Return ONLY the JSON object, no markdown formatting, no explanations
+- Return ONLY the JSON object, no markdown formatting, no explanations, no system prompt text
 - Ensure all values are numbers, not strings
 - Labels and values arrays must have the same length
 - Choose chart types that best represent the data (bar for comparisons, line for trends, pie for proportions)
@@ -174,8 +174,9 @@ Output:
 - If time period is specified (last 3 months, last 6 months), only include those months
 - If a specific product is mentioned, use data for that product only
 - If "compare" or "all products" is mentioned, aggregate data across all products
+- DO NOT include this prompt text in your response - return ONLY the JSON object
 
-Now, analyze the user's request and return the appropriate JSON configuration.`
+Now, analyze the user's request and return ONLY the JSON configuration object.`
 
 export const EXAMPLE_OUTPUTS = {
   monthlySales: {
