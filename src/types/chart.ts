@@ -42,6 +42,15 @@ export interface AIChartResponse {
   yAxisLabel?: string
 }
 
+export interface AITableResponse {
+  widgetType: 'table'
+  title?: string
+  headers: string[]
+  rows: (string | number)[][]
+}
+
+export type AIWidgetResponse = AIChartResponse | AITableResponse
+
 export interface SampleDataPoint {
   month?: string
   quarter?: string

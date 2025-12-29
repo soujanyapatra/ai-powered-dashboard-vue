@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { ChartData, DashboardSection, WidgetData } from '@/types/chart'
+import type { DashboardSection, WidgetData } from '@/types/chart'
 import { generateChartFromPrompt } from '@/services/openaiService'
 import { generateDefaultCharts } from '@/utils/defaultCharts'
 
@@ -98,14 +98,36 @@ export const useDashboardStore = defineStore('dashboard', () => {
     previewChart.value = null
 
     try {
-      const chartData = await generateChartFromPrompt(prompt)
+      const widgetData = await generateChartFromPrompt(prompt)
       
-      const preview: ChartData = {
-        ...chartData,
-        id: `preview-${Date.now()}`,
-        title: chartData.title || `Chart ${widgetCount.value + 1}`,
-        sectionId: sectionId || selectedSectionId.value || sections.value[0]?.id || 'sales-overview',
-        widgetType: 'chart',
+      // Convert AI response to WidgetData
+      let preview: WidgetData
+      const sectionIdValue = sectionId || selectedSectionId.value || sections.value[0]?.id || 'sales-overview'
+      
+      // Type guard: check if it's a table by checking for 'headers' property
+      if ('headers' in widgetData && 'rows' in widgetData) {
+        // It's a table
+        preview = {
+          widgetType: 'table',
+          id: `preview-${Date.now()}`,
+          title: widgetData.title || 'Table',
+          headers: widgetData.headers,
+          rows: widgetData.rows,
+          sectionId: sectionIdValue,
+        }
+      } else {
+        // It's a chart
+        preview = {
+          widgetType: 'chart',
+          id: `preview-${Date.now()}`,
+          chartType: widgetData.chartType,
+          labels: widgetData.labels,
+          values: widgetData.values,
+          title: widgetData.title || `Widget ${widgetCount.value + 1}`,
+          xAxisLabel: widgetData.xAxisLabel,
+          yAxisLabel: widgetData.yAxisLabel,
+          sectionId: sectionIdValue,
+        }
       }
       
       previewChart.value = preview

@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import type { AIChartResponse, ChartType } from "@/types/chart";
+import type { ChartType, AIWidgetResponse, AITableResponse } from "@/types/chart";
 import { CHART_GENERATION_SYSTEM_PROMPT } from "@/prompts/chartPrompts";
 import { useChartFallback } from "@/composables/useChartFallback";
 import { parsePrompt } from "@/utils/promptParser";
@@ -31,6 +31,7 @@ export function hasOpenAIKey(): boolean {
 }
 
 export interface ParsePromptResult {
+  widgetType?: 'chart' | 'table';
   chartType: ChartType;
   dataField:
     | "sales"
@@ -47,12 +48,12 @@ export interface ParsePromptResult {
 }
 
 /**
- * Call OpenAI API to generate chart configuration
+ * Call OpenAI API to generate chart or table configuration
  * Falls back to simple parsing if API key is not available
  */
 export async function generateChartFromPrompt(
   prompt: string
-): Promise<AIChartResponse> {
+): Promise<AIWidgetResponse> {
   const openai = getOpenAIClient();
 
   if (!openai) {
@@ -156,12 +157,15 @@ Return ONLY the JSON object matching the structure specified in the system promp
 
     // Parse JSON response (should be valid JSON due to response_format)
     interface ParsedResponse {
+      widgetType?: 'chart' | 'table';
       chartType?: string;
       labels?: unknown[];
       values?: unknown[];
       title?: string;
       xAxisLabel?: string;
       yAxisLabel?: string;
+      headers?: unknown[];
+      rows?: unknown[][];
     }
 
     let parsed: ParsedResponse;
@@ -189,7 +193,41 @@ Return ONLY the JSON object matching the structure specified in the system promp
       }
     }
 
-    // Validate and return structured response
+    // Check if it's a table request
+    if (parsed.widgetType === 'table' || (parsed.headers && parsed.rows)) {
+      // Validate table structure
+      if (
+        !parsed.headers ||
+        !parsed.rows ||
+        !Array.isArray(parsed.headers) ||
+        !Array.isArray(parsed.rows)
+      ) {
+        throw new Error("Invalid table data structure in response");
+      }
+
+      const tableResponse: AITableResponse = {
+        widgetType: 'table',
+        title: parsed.title || "Table",
+        headers: parsed.headers.map((h: unknown) => String(h)),
+        rows: parsed.rows.map((row: unknown) => {
+          if (!Array.isArray(row)) {
+            throw new Error("Invalid table row format");
+          }
+          return row.map((cell: unknown) => {
+            if (typeof cell === 'number') return cell;
+            if (typeof cell === 'string') {
+              const num = parseFloat(cell);
+              return !isNaN(num) ? num : cell;
+            }
+            return String(cell);
+          });
+        }),
+      };
+
+      return tableResponse;
+    }
+
+    // Validate chart structure
     if (
       !parsed.labels ||
       !parsed.values ||
@@ -223,8 +261,16 @@ Return ONLY the JSON object matching the structure specified in the system promp
  * Fallback function that uses simple parsing and sample data
  * Delegates to the chart fallback composable for cleaner code
  */
-function generateChartFromPromptFallback(prompt: string): AIChartResponse {
+function generateChartFromPromptFallback(prompt: string): AIWidgetResponse {
   const parsed = parsePrompt(prompt);
+  
+  // Check if user wants a table
+  if (parsed.widgetType === 'table') {
+    const { generateTableFromPrompt } = useChartFallback();
+    return generateTableFromPrompt(prompt, parsed);
+  }
+  
+  // Otherwise generate chart
   const { generateChartFromPrompt } = useChartFallback();
   return generateChartFromPrompt(prompt, parsed);
 }

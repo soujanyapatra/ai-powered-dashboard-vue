@@ -180,9 +180,31 @@ function extractCategory(prompt: string): string | undefined {
 }
 
 /**
+ * Extract widget type (chart or table) from prompt
+ */
+function extractWidgetType(prompt: string): 'chart' | 'table' {
+  const lowerPrompt = prompt.toLowerCase()
+  
+  // Check for table keywords first (more specific)
+  if (
+    lowerPrompt.includes('table') ||
+    lowerPrompt.includes('tabular') ||
+    lowerPrompt.includes('grid') ||
+    lowerPrompt.includes('spreadsheet') ||
+    (lowerPrompt.includes('show') && lowerPrompt.includes('data') && !lowerPrompt.includes('chart') && !lowerPrompt.includes('graph'))
+  ) {
+    return 'table'
+  }
+  
+  // Default to chart
+  return 'chart'
+}
+
+/**
  * Main function to parse user prompt and extract chart requirements
  */
 export function parsePrompt(prompt: string): ParsePromptResult {
+  const widgetType = extractWidgetType(prompt)
   const chartType = extractChartType(prompt)
   const dataField = extractDataField(prompt)
   const filterMonths = extractMonthFilter(prompt)
@@ -192,6 +214,7 @@ export function parsePrompt(prompt: string): ParsePromptResult {
   const category = extractCategory(prompt)
   
   return {
+    widgetType,
     chartType,
     dataField,
     filterMonths,

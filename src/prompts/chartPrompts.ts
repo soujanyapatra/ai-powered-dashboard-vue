@@ -27,7 +27,11 @@ Your task is to analyze user prompts and return a JSON object that specifies:
 ### Available Metrics
 - sales, revenue, expenses, profit, units, customers
 
-### Chart Types
+### Widget Types
+- **chart**: For visual data representation (bar, line, pie, area, donut)
+- **table**: For tabular data display with rows and columns
+
+### Chart Types (for chart widgets)
 - bar: For comparisons, categories, discrete data
 - line: For trends over time, continuous data
 - pie: For proportions, parts of a whole
@@ -36,10 +40,12 @@ Your task is to analyze user prompts and return a JSON object that specifies:
 
 ## Output Format
 
+**For Charts:**
 Return ONLY a valid JSON object with this exact structure:
 
 \`\`\`json
 {
+  "widgetType": "chart",
   "chartType": "bar" | "line" | "pie" | "area" | "donut",
   "labels": ["Label1", "Label2", "Label3", ...],
   "values": [100, 200, 300, ...],
@@ -49,9 +55,31 @@ Return ONLY a valid JSON object with this exact structure:
 }
 \`\`\`
 
+**For Tables:**
+Return ONLY a valid JSON object with this exact structure:
+
+\`\`\`json
+{
+  "widgetType": "table",
+  "title": "Descriptive Table Title",
+  "headers": ["Column1", "Column2", "Column3", ...],
+  "rows": [
+    ["Row1Col1", "Row1Col2", "Row1Col3", ...],
+    ["Row2Col1", "Row2Col2", "Row2Col3", ...],
+    ...
+  ]
+}
+\`\`\`
+
+**IMPORTANT:** If the user requests a "table", "tabular data", "grid", or "spreadsheet", return the table format. Otherwise, return the chart format.
+
 ## Rules
 
-1. **Chart Type Selection**:
+1. **Widget Type Selection**:
+   - If user requests "table", "tabular", "grid", or "spreadsheet", return a table widget
+   - Otherwise, return a chart widget
+
+2. **Chart Type Selection** (for chart widgets):
    - Use "bar" for comparing categories, products, regions
    - Use "line" for trends over time (months, quarters)
    - Use "pie" or "donut" for showing proportions/percentages

@@ -1,4 +1,4 @@
-import type { AIChartResponse, SampleDataPoint } from '@/types/chart'
+import type { AIChartResponse, AITableResponse, SampleDataPoint } from '@/types/chart'
 import {
   quarterlyData,
   regionalData,
@@ -156,8 +156,119 @@ export function useChartFallback() {
     }
   }
 
+  /**
+   * Generate table from prompt using fallback parser
+   */
+  function generateTableFromPrompt(_prompt: string, parsed: ParsePromptResult): AITableResponse {
+    // Determine which data source to use
+    let data: SampleDataPoint[] = []
+    let headers: string[] = []
+    let title = 'Data Table'
+
+    if (parsed.dataSource === 'quarterly') {
+      data = quarterlyData
+      headers = ['Quarter', 'Sales', 'Revenue', 'Expenses', 'Profit', 'Units', 'Customers']
+      title = 'Quarterly Performance'
+    } else if (parsed.dataSource === 'regional') {
+      data = regionalData
+      headers = ['Region', 'Sales', 'Revenue', 'Profit', 'Units', 'Customers']
+      title = 'Regional Performance'
+    } else if (parsed.dataSource === 'category') {
+      data = categoryData
+      headers = ['Category', 'Sales', 'Revenue', 'Profit', 'Units', 'Customers']
+      title = 'Category Performance'
+    } else if (parsed.dataSource === 'all' || !parsed.product) {
+      // All products table
+      const productMap = new Map<string, {
+        sales: number
+        revenue: number
+        profit: number
+        units: number
+        customers: number
+      }>()
+
+      allProductsData.forEach((item) => {
+        if (item.product) {
+          const current = productMap.get(item.product) || {
+            sales: 0,
+            revenue: 0,
+            profit: 0,
+            units: 0,
+            customers: 0,
+          }
+          productMap.set(item.product, {
+            sales: current.sales + item.sales,
+            revenue: (current.revenue || 0) + (item.revenue || 0),
+            profit: (current.profit || 0) + (item.profit || 0),
+            units: (current.units || 0) + (item.units || 0),
+            customers: (current.customers || 0) + (item.customers || 0),
+          })
+        }
+      })
+
+      headers = ['Product', 'Sales', 'Revenue', 'Profit', 'Units', 'Customers']
+      title = 'Product Performance Overview'
+
+      const rows: (string | number)[][] = Array.from(productMap.entries()).map(([product, metrics]) => [
+        product,
+        metrics.sales,
+        metrics.revenue,
+        metrics.profit,
+        metrics.units,
+        metrics.customers,
+      ])
+
+      return {
+        widgetType: 'table',
+        title,
+        headers,
+        rows,
+      }
+    } else {
+      // Product-specific monthly data
+      const productData = getDataByProduct(parsed.product)
+      const filteredData = parsed.filterMonths && productData[0]?.month
+        ? productData.slice(-parsed.filterMonths)
+        : productData
+
+      data = filteredData
+      headers = ['Month', 'Sales', 'Revenue', 'Expenses', 'Profit', 'Units', 'Customers']
+      title = `${parsed.product} Monthly Performance`
+    }
+
+    // Generate rows from data
+    const rows: (string | number)[][] = data.map((item) => {
+      const row: (string | number)[] = []
+
+      // First column is the identifier (month, quarter, region, category)
+      if (item.month) row.push(item.month)
+      else if (item.quarter) row.push(item.quarter)
+      else if (item.region) row.push(item.region)
+      else if (item.category) row.push(item.category)
+      else row.push('')
+
+      // Add numeric columns
+      row.push(item.sales)
+      if (headers.includes('Revenue')) row.push(item.revenue || 0)
+      if (headers.includes('Expenses')) row.push(item.expenses || 0)
+      if (headers.includes('Profit')) row.push(item.profit || 0)
+      if (headers.includes('Units')) row.push(item.units || 0)
+      if (headers.includes('Customers')) row.push(item.customers || 0)
+
+      return row
+    })
+
+    return {
+      widgetType: 'table',
+      title,
+      headers,
+      rows,
+    }
+  }
+
   return {
     generateChartFromPrompt,
+    generateTableFromPrompt,
   }
 }
 
