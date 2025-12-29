@@ -1,6 +1,8 @@
 import OpenAI from 'openai'
 import type { AIChartResponse, ChartType } from '@/types/chart'
-import { sampleSalesData, sampleProductData } from '@/data/sampleData'
+import { CHART_GENERATION_SYSTEM_PROMPT } from '@/prompts/chartPrompts'
+import { useChartFallback } from '@/composables/useChartFallback'
+import { parsePrompt } from '@/utils/promptParser'
 
 // Lazy initialization of OpenAI client - only create if API key is available
 let openaiClient: OpenAI | null = null
@@ -30,56 +32,12 @@ export function hasOpenAIKey(): boolean {
 
 export interface ParsePromptResult {
   chartType: ChartType
-  dataField: 'sales' | 'revenue' | 'expenses'
+  dataField: 'sales' | 'revenue' | 'expenses' | 'profit' | 'units' | 'customers'
   filterMonths?: number
   product?: string
-}
-
-/**
- * Parse user prompt to extract chart requirements
- * In a real application, this would use OpenAI to understand the intent
- */
-function parsePrompt(prompt: string): ParsePromptResult {
-  const lowerPrompt = prompt.toLowerCase()
-  
-  // Determine chart type
-  let chartType: ChartType = 'bar'
-  if (lowerPrompt.includes('line') || lowerPrompt.includes('trend')) {
-    chartType = 'line'
-  } else if (lowerPrompt.includes('pie')) {
-    chartType = 'pie'
-  } else if (lowerPrompt.includes('area')) {
-    chartType = 'area'
-  }
-  
-  // Determine data field
-  let dataField: 'sales' | 'revenue' | 'expenses' = 'sales'
-  if (lowerPrompt.includes('revenue')) {
-    dataField = 'revenue'
-  } else if (lowerPrompt.includes('expense')) {
-    dataField = 'expenses'
-  }
-  
-  // Extract month filter
-  let filterMonths: number | undefined
-  const monthMatch = lowerPrompt.match(/(\d+)\s*month/i)
-  if (monthMatch) {
-    filterMonths = parseInt(monthMatch[1])
-  } else if (lowerPrompt.includes('last 3 month')) {
-    filterMonths = 3
-  } else if (lowerPrompt.includes('last 6 month')) {
-    filterMonths = 6
-  }
-  
-  // Extract product
-  let product: string | undefined
-  if (lowerPrompt.includes('product a')) {
-    product = 'Product A'
-  } else if (lowerPrompt.includes('product b')) {
-    product = 'Product B'
-  }
-  
-  return { chartType, dataField, filterMonths, product }
+  category?: string
+  region?: string
+  dataSource?: 'quarterly' | 'regional' | 'category' | 'all' | 'product'
 }
 
 /**
@@ -97,32 +55,15 @@ export async function generateChartFromPrompt(prompt: string): Promise<AIChartRe
   }
   
   try {
-    const systemPrompt = `You are a data visualization assistant. Given a user's request about data visualization, return a JSON object with the following structure:
-{
-  "chartType": "bar" | "line" | "pie" | "area" | "donut",
-  "labels": ["array", "of", "labels"],
-  "values": [array, of, numbers],
-  "title": "Chart Title",
-  "xAxisLabel": "X Axis Label",
-  "yAxisLabel": "Y Axis Label"
-}
-
-Available sample data:
-- Months: Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec
-- Sales values: 1500-3600 range
-- Revenue values: 4800-8500 range
-- Expenses values: 2800-4600 range
-
-Return ONLY valid JSON, no markdown, no explanation.`
-
     const completion = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
-        { role: 'system', content: systemPrompt },
+        { role: 'system', content: CHART_GENERATION_SYSTEM_PROMPT },
         { role: 'user', content: prompt },
       ],
-      temperature: 0.3,
-      max_tokens: 500,
+      temperature: 0.2, // Lower temperature for more consistent, structured outputs
+      max_tokens: 800, // Increased for more detailed responses
+      response_format: { type: 'json_object' }, // Force JSON output format
     })
     
     const content = completion.choices[0]?.message?.content
@@ -130,21 +71,48 @@ Return ONLY valid JSON, no markdown, no explanation.`
       throw new Error('No response from OpenAI')
     }
     
-    // Extract JSON from response (handle markdown code blocks)
-    const jsonMatch = content.match(/\{[\s\S]*\}/)
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0])
-      return {
-        chartType: parsed.chartType || 'bar',
-        labels: parsed.labels || [],
-        values: parsed.values || [],
-        title: parsed.title,
-        xAxisLabel: parsed.xAxisLabel,
-        yAxisLabel: parsed.yAxisLabel,
+    // Parse JSON response (should be valid JSON due to response_format)
+    interface ParsedResponse {
+      chartType?: string
+      labels?: unknown[]
+      values?: unknown[]
+      title?: string
+      xAxisLabel?: string
+      yAxisLabel?: string
+    }
+    
+    let parsed: ParsedResponse
+    try {
+      parsed = JSON.parse(content) as ParsedResponse
+    } catch (parseError) {
+      // Fallback: try to extract JSON from markdown code blocks if present
+      const jsonMatch = content.match(/\{[\s\S]*\}/)
+      if (jsonMatch) {
+        parsed = JSON.parse(jsonMatch[0]) as ParsedResponse
+      } else {
+        throw new Error('Invalid JSON in response')
       }
     }
     
-    throw new Error('Invalid JSON in response')
+    // Validate and return structured response
+    if (!parsed.labels || !parsed.values || !Array.isArray(parsed.labels) || !Array.isArray(parsed.values)) {
+      throw new Error('Invalid chart data structure in response')
+    }
+    
+    // Ensure values are numbers
+    const values = parsed.values.map((v: unknown) => {
+      const num = typeof v === 'string' ? parseFloat(v) : v
+      return typeof num === 'number' && !isNaN(num) ? num : 0
+    })
+    
+    return {
+      chartType: (parsed.chartType || 'bar') as ChartType,
+      labels: parsed.labels.map((l: unknown) => String(l)),
+      values,
+      title: parsed.title || 'Chart',
+      xAxisLabel: parsed.xAxisLabel || '',
+      yAxisLabel: parsed.yAxisLabel || '',
+    }
   } catch (error) {
     console.warn('OpenAI API error, using fallback:', error)
     return generateChartFromPromptFallback(prompt)
@@ -153,41 +121,11 @@ Return ONLY valid JSON, no markdown, no explanation.`
 
 /**
  * Fallback function that uses simple parsing and sample data
+ * Delegates to the chart fallback composable for cleaner code
  */
 function generateChartFromPromptFallback(prompt: string): AIChartResponse {
   const parsed = parsePrompt(prompt)
-  const dataSource = parsed.product === 'Product B' ? sampleProductData : sampleSalesData
-  
-  let data = [...dataSource]
-  
-  // Apply month filter
-  if (parsed.filterMonths) {
-    data = data.slice(-parsed.filterMonths)
-  }
-  
-  // Extract labels and values
-  const labels = data.map(item => item.month)
-  const values = data.map(item => {
-    const value = item[parsed.dataField]
-    return typeof value === 'number' ? value : 0
-  })
-  
-  // Generate title
-  let title = `${parsed.dataField.charAt(0).toUpperCase() + parsed.dataField.slice(1)}`
-  if (parsed.product) {
-    title += ` - ${parsed.product}`
-  }
-  if (parsed.filterMonths) {
-    title += ` (Last ${parsed.filterMonths} months)`
-  }
-  
-  return {
-    chartType: parsed.chartType,
-    labels,
-    values,
-    title,
-    xAxisLabel: 'Month',
-    yAxisLabel: parsed.dataField.charAt(0).toUpperCase() + parsed.dataField.slice(1),
-  }
+  const { generateChartFromPrompt } = useChartFallback()
+  return generateChartFromPrompt(prompt, parsed)
 }
 

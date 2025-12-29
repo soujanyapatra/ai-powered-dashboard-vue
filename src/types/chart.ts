@@ -1,4 +1,5 @@
 export type ChartType = 'bar' | 'line' | 'pie' | 'area' | 'donut'
+export type WidgetType = 'chart' | 'table'
 
 export interface ChartData {
   chartType: ChartType
@@ -7,6 +8,29 @@ export interface ChartData {
   title?: string
   xAxisLabel?: string
   yAxisLabel?: string
+  id?: string
+  sectionId?: string
+  widgetType?: 'chart'
+}
+
+export interface TableData {
+  id?: string
+  sectionId?: string
+  widgetType: 'table'
+  title?: string
+  headers: string[]
+  rows: (string | number)[][]
+}
+
+export type WidgetData = ChartData | TableData
+
+export interface DashboardSection {
+  id: string
+  title: string
+  description: string
+  icon: string
+  color: string
+  charts: WidgetData[]
 }
 
 export interface AIChartResponse {
@@ -19,10 +43,17 @@ export interface AIChartResponse {
 }
 
 export interface SampleDataPoint {
-  month: string
+  month?: string
+  quarter?: string
+  year?: number
   sales: number
   revenue?: number
   expenses?: number
+  profit?: number
+  units?: number
+  customers?: number
   product?: string
+  category?: string
+  region?: string
 }
 

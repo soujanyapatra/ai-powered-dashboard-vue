@@ -3,9 +3,14 @@ import { ref } from 'vue'
 import type { ChartData } from '@/types/chart'
 import ChartJsChart from './charts/ChartJsChart.vue'
 import ApexChart from './charts/ApexChart.vue'
+import Card from 'primevue/card'
+import Button from 'primevue/button'
+import Dropdown from 'primevue/dropdown'
+import Tag from 'primevue/tag'
 
 interface Props {
   data: ChartData
+  isPreview?: boolean
 }
 
 defineProps<Props>()
@@ -15,58 +20,104 @@ defineEmits<{
 }>()
 
 const selectedLibrary = ref<'chartjs' | 'apex'>('chartjs')
+
+const libraryOptions = [
+  { label: 'Chart.js', value: 'chartjs' },
+  { label: 'ApexCharts', value: 'apex' },
+]
 </script>
 
 <template>
-  <div class="widget-container bg-white rounded-lg shadow-lg p-6 border border-gray-200">
-    <div class="flex justify-between items-start mb-4">
-      <h3 class="text-lg font-semibold text-gray-800">
-        {{ data.title }}
-      </h3>
-      <div class="flex gap-2">
-        <select
-          v-model="selectedLibrary"
-          class="text-sm px-3 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="chartjs">Chart.js</option>
-          <option value="apex">ApexCharts</option>
-        </select>
-        <button
-          class="text-red-500 hover:text-red-700 p-1 transition-colors"
-          title="Remove widget"
-          @click="$emit('remove')"
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+  <Card class="bg-white border border-gray-200 rounded-xl transition-all duration-200 overflow-hidden flex flex-col shadow-sm h-full hover:shadow-lg hover:border-slate-300 hover:-translate-y-0.5">
+    <template #header>
+      <div class="flex justify-between items-start py-5 px-6 bg-slate-50 border-b border-gray-200 gap-4">
+        <div class="flex-1 min-w-0">
+          <div class="flex flex-col gap-3">
+            <h4 class="m-0 text-lg font-semibold text-slate-800 tracking-tight leading-tight">
+              {{ data.title }}
+            </h4>
+            <div class="flex items-center gap-3 flex-wrap">
+              <Tag
+                :value="data.chartType.toUpperCase()"
+                severity="info"
+                class="text-xs font-semibold py-1.5 px-3 rounded-md"
+              />
+              <Tag
+                :value="selectedLibrary === 'chartjs' ? 'Chart.js' : 'ApexCharts'"
+                severity="secondary"
+                class="text-xs font-semibold py-1.5 px-3 rounded-md"
+              />
+              <span v-if="data.xAxisLabel" class="text-xs text-slate-500 flex items-center gap-1.5 font-medium">
+                <i class="pi pi-arrow-right text-xs opacity-60"></i>
+                {{ data.xAxisLabel }}
+              </span>
+              <span v-if="data.yAxisLabel" class="text-xs text-slate-500 flex items-center gap-1.5 font-medium">
+                <i class="pi pi-arrow-up text-xs opacity-60"></i>
+                {{ data.yAxisLabel }}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-3 flex-shrink-0">
+          <Dropdown
+            v-model="selectedLibrary"
+            :options="libraryOptions"
+            option-label="label"
+            option-value="value"
+            class="w-[140px]"
+            placeholder="Library"
+          />
+          <Button
+            v-if="!isPreview"
+            icon="pi pi-times"
+            severity="danger"
+            text
+            rounded
+            size="small"
+            class="text-slate-500 transition-all duration-200 w-8 h-8 flex items-center justify-center hover:text-red-600 hover:bg-red-50"
+            aria-label="Remove widget"
+            @click="$emit('remove')"
+          />
+        </div>
       </div>
-    </div>
+    </template>
     
-    <div class="chart-wrapper" style="height: 350px;">
-      <ChartJsChart
-        v-if="selectedLibrary === 'chartjs'"
-        :data="data"
-      />
-      <ApexChart
-        v-else
-        :data="data"
-      />
-    </div>
-    
-    <div class="mt-4 text-xs text-gray-500">
-      <span class="inline-block px-2 py-1 bg-gray-100 rounded">
-        Type: {{ data.chartType }}
-      </span>
-      <span class="inline-block px-2 py-1 bg-gray-100 rounded ml-2">
-        Library: {{ selectedLibrary === 'chartjs' ? 'Chart.js' : 'ApexCharts' }}
-      </span>
-    </div>
-  </div>
+    <template #content>
+      <div class="relative h-[400px] p-6 bg-white flex-1 min-h-[400px] flex items-center justify-center">
+        <ChartJsChart
+          v-if="selectedLibrary === 'chartjs'"
+          :data="data"
+        />
+        <ApexChart
+          v-else
+          :data="data"
+        />
+      </div>
+    </template>
+  </Card>
 </template>
 
 <style scoped>
-.chart-wrapper {
-  position: relative;
+:deep(.p-card-body) {
+  padding: 0;
+}
+
+:deep(.p-card-content) {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+:deep(.p-card) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+:deep(.p-card-body) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 </style>
