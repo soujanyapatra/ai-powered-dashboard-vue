@@ -1,193 +1,276 @@
-import OpenAI from 'openai'
-import type { AIChartResponse, ChartType } from '@/types/chart'
-import { sampleSalesData, sampleProductData } from '@/data/sampleData'
+import OpenAI from "openai";
+import type { ChartType, AIWidgetResponse, AITableResponse } from "@/types/chart";
+import { CHART_GENERATION_SYSTEM_PROMPT } from "@/prompts/chartPrompts";
+import { useChartFallback } from "@/composables/useChartFallback";
+import { parsePrompt } from "@/utils/promptParser";
 
 // Lazy initialization of OpenAI client - only create if API key is available
-let openaiClient: OpenAI | null = null
+let openaiClient: OpenAI | null = null;
 
 function getOpenAIClient(): OpenAI | null {
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY
-  
-  if (!apiKey || apiKey.trim() === '') {
-    return null
+  const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
+
+  if (!apiKey || apiKey.trim() === "") {
+    return null;
   }
-  
+
   if (!openaiClient) {
     openaiClient = new OpenAI({
       apiKey,
       dangerouslyAllowBrowser: true, // Only for frontend demo - in production, use backend proxy
-    })
+    });
   }
-  
-  return openaiClient
+
+  return openaiClient;
 }
 
 // Export function to check if API key is available
 export function hasOpenAIKey(): boolean {
-  const apiKey = import.meta.env.VITE_OPENAI_API_KEY
-  return !!(apiKey && apiKey.trim() !== '')
+  const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
+  return !!(apiKey && apiKey.trim() !== "");
 }
 
 export interface ParsePromptResult {
-  chartType: ChartType
-  dataField: 'sales' | 'revenue' | 'expenses'
-  filterMonths?: number
-  product?: string
+  widgetType?: 'chart' | 'table';
+  chartType: ChartType;
+  dataField:
+    | "sales"
+    | "revenue"
+    | "expenses"
+    | "profit"
+    | "units"
+    | "customers";
+  filterMonths?: number;
+  product?: string;
+  category?: string;
+  region?: string;
+  dataSource?: "quarterly" | "regional" | "category" | "all" | "product";
 }
 
 /**
- * Parse user prompt to extract chart requirements
- * In a real application, this would use OpenAI to understand the intent
- */
-function parsePrompt(prompt: string): ParsePromptResult {
-  const lowerPrompt = prompt.toLowerCase()
-  
-  // Determine chart type
-  let chartType: ChartType = 'bar'
-  if (lowerPrompt.includes('line') || lowerPrompt.includes('trend')) {
-    chartType = 'line'
-  } else if (lowerPrompt.includes('pie')) {
-    chartType = 'pie'
-  } else if (lowerPrompt.includes('area')) {
-    chartType = 'area'
-  }
-  
-  // Determine data field
-  let dataField: 'sales' | 'revenue' | 'expenses' = 'sales'
-  if (lowerPrompt.includes('revenue')) {
-    dataField = 'revenue'
-  } else if (lowerPrompt.includes('expense')) {
-    dataField = 'expenses'
-  }
-  
-  // Extract month filter
-  let filterMonths: number | undefined
-  const monthMatch = lowerPrompt.match(/(\d+)\s*month/i)
-  if (monthMatch) {
-    filterMonths = parseInt(monthMatch[1])
-  } else if (lowerPrompt.includes('last 3 month')) {
-    filterMonths = 3
-  } else if (lowerPrompt.includes('last 6 month')) {
-    filterMonths = 6
-  }
-  
-  // Extract product
-  let product: string | undefined
-  if (lowerPrompt.includes('product a')) {
-    product = 'Product A'
-  } else if (lowerPrompt.includes('product b')) {
-    product = 'Product B'
-  }
-  
-  return { chartType, dataField, filterMonths, product }
-}
-
-/**
- * Call OpenAI API to generate chart configuration
+ * Call OpenAI API to generate chart or table configuration
  * Falls back to simple parsing if API key is not available
  */
-export async function generateChartFromPrompt(prompt: string): Promise<AIChartResponse> {
-  const openai = getOpenAIClient()
-  
+export async function generateChartFromPrompt(
+  prompt: string
+): Promise<AIWidgetResponse> {
+  const openai = getOpenAIClient();
+
   if (!openai) {
     // No API key available, use fallback
     // eslint-disable-next-line no-console
-    console.info('OpenAI API key not found. Using fallback parser with sample data.')
-    return generateChartFromPromptFallback(prompt)
+    console.info(
+      "OpenAI API key not found. Using fallback parser with sample data."
+    );
+    return generateChartFromPromptFallback(prompt);
   }
-  
+
   try {
-    const systemPrompt = `You are a data visualization assistant. Given a user's request about data visualization, return a JSON object with the following structure:
-{
-  "chartType": "bar" | "line" | "pie" | "area" | "donut",
-  "labels": ["array", "of", "labels"],
-  "values": [array, of, numbers],
-  "title": "Chart Title",
-  "xAxisLabel": "X Axis Label",
-  "yAxisLabel": "Y Axis Label"
-}
+    // Use the full system prompt from prompts file
+    // Add explicit instruction at the end to prevent it from being returned
+    const systemPromptWithInstruction = `${CHART_GENERATION_SYSTEM_PROMPT}
 
-Available sample data:
-- Months: Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec
-- Sales values: 1500-3600 range
-- Revenue values: 4800-8500 range
-- Expenses values: 2800-4600 range
+CRITICAL: You must return ONLY the JSON object. Do NOT repeat this prompt, do NOT include explanations, do NOT include markdown formatting. Start your response with { and end with }.`;
 
-Return ONLY valid JSON, no markdown, no explanation.`
+    // User message - keep it simple and direct
+    const userMessage = `Generate chart configuration for: "${prompt}"
+
+Return ONLY the JSON object matching the structure specified in the system prompt.`;
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
+      model: "gpt-4o-mini", // Use model with reliable JSON support
       messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: prompt },
+        { role: "system", content: systemPromptWithInstruction },
+        { role: "user", content: userMessage },
       ],
-      temperature: 0.3,
-      max_tokens: 500,
-    })
-    
-    const content = completion.choices[0]?.message?.content
+      temperature: 0.1,
+      max_tokens: 300,
+      response_format: { type: "json_object" }, // Force JSON output format
+    });
+
+    const content = completion.choices[0]?.message?.content;
     if (!content) {
-      throw new Error('No response from OpenAI')
+      throw new Error("No response from OpenAI");
     }
-    
-    // Extract JSON from response (handle markdown code blocks)
-    const jsonMatch = content.match(/\{[\s\S]*\}/)
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0])
-      return {
-        chartType: parsed.chartType || 'bar',
-        labels: parsed.labels || [],
-        values: parsed.values || [],
-        title: parsed.title,
-        xAxisLabel: parsed.xAxisLabel,
-        yAxisLabel: parsed.yAxisLabel,
+
+    // Clean the content - remove any system prompt text that might be included
+    let cleanedContent = content.trim();
+
+    // Define system prompt indicators for detection
+    const systemPromptIndicators = [
+      "You are a data visualization assistant",
+      "Your task is to analyze",
+      "## Available Data Sources",
+      "### Products (Monthly Data",
+      "### Aggregated Data",
+    ];
+
+    // Check if the entire response is just the system prompt (this should not happen, but handle it)
+    const isSystemPrompt = systemPromptIndicators.some((indicator: string) =>
+      cleanedContent.includes(indicator)
+    ) && cleanedContent.length > 200 && !cleanedContent.trim().startsWith("{");
+
+    if (isSystemPrompt) {
+      // This looks like the system prompt was returned instead of JSON
+      // eslint-disable-next-line no-console
+      console.warn(
+        "OpenAI returned system prompt instead of JSON, using fallback parser"
+      );
+      // Immediately use fallback instead of trying to parse
+      return generateChartFromPromptFallback(prompt);
+    }
+
+    // Remove the system prompt if it's somehow included in the response
+    // Check if system prompt text appears before JSON
+    const hasSystemPromptBeforeJson = systemPromptIndicators.some((indicator: string) =>
+      cleanedContent.includes(indicator)
+    ) && cleanedContent.indexOf("{") > 50; // JSON starts after system prompt text
+
+    if (hasSystemPromptBeforeJson) {
+      // Find the JSON object in the response (look for the first { that starts a JSON object)
+      const jsonStart = cleanedContent.indexOf("{");
+      if (jsonStart > -1) {
+        // Find the matching closing brace
+        let braceCount = 0;
+        let jsonEnd = jsonStart;
+        for (let i = jsonStart; i < cleanedContent.length; i++) {
+          if (cleanedContent[i] === "{") braceCount++;
+          if (cleanedContent[i] === "}") {
+            braceCount--;
+            if (braceCount === 0) {
+              jsonEnd = i + 1;
+              break;
+            }
+          }
+        }
+        cleanedContent = cleanedContent.substring(jsonStart, jsonEnd);
+      } else {
+        // No JSON found in response, throw error to use fallback
+        throw new Error("No JSON found in response");
       }
     }
-    
-    throw new Error('Invalid JSON in response')
+
+    // Remove markdown code blocks if present
+    cleanedContent = cleanedContent
+      .replace(/```json\s*/g, "")
+      .replace(/```\s*/g, "");
+
+    // Parse JSON response (should be valid JSON due to response_format)
+    interface ParsedResponse {
+      widgetType?: 'chart' | 'table';
+      chartType?: string;
+      labels?: unknown[];
+      values?: unknown[];
+      title?: string;
+      xAxisLabel?: string;
+      yAxisLabel?: string;
+      headers?: unknown[];
+      rows?: unknown[][];
+    }
+
+    let parsed: ParsedResponse;
+    try {
+      // Try parsing the cleaned content directly
+      parsed = JSON.parse(cleanedContent) as ParsedResponse;
+    } catch (parseError) {
+      // Fallback: try to extract JSON using regex
+      const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          parsed = JSON.parse(jsonMatch[0]) as ParsedResponse;
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.error("Failed to parse extracted JSON:", jsonMatch[0]);
+          throw new Error("Invalid JSON in response");
+        }
+      } else {
+        // eslint-disable-next-line no-console
+        console.error(
+          "Failed to find JSON in OpenAI response:",
+          cleanedContent.substring(0, 200)
+        );
+        throw new Error("Invalid JSON in response");
+      }
+    }
+
+    // Check if it's a table request
+    if (parsed.widgetType === 'table' || (parsed.headers && parsed.rows)) {
+      // Validate table structure
+      if (
+        !parsed.headers ||
+        !parsed.rows ||
+        !Array.isArray(parsed.headers) ||
+        !Array.isArray(parsed.rows)
+      ) {
+        throw new Error("Invalid table data structure in response");
+      }
+
+      const tableResponse: AITableResponse = {
+        widgetType: 'table',
+        title: parsed.title || "Table",
+        headers: parsed.headers.map((h: unknown) => String(h)),
+        rows: parsed.rows.map((row: unknown) => {
+          if (!Array.isArray(row)) {
+            throw new Error("Invalid table row format");
+          }
+          return row.map((cell: unknown) => {
+            if (typeof cell === 'number') return cell;
+            if (typeof cell === 'string') {
+              const num = parseFloat(cell);
+              return !isNaN(num) ? num : cell;
+            }
+            return String(cell);
+          });
+        }),
+      };
+
+      return tableResponse;
+    }
+
+    // Validate chart structure
+    if (
+      !parsed.labels ||
+      !parsed.values ||
+      !Array.isArray(parsed.labels) ||
+      !Array.isArray(parsed.values)
+    ) {
+      throw new Error("Invalid chart data structure in response");
+    }
+
+    // Ensure values are numbers
+    const values = parsed.values.map((v: unknown) => {
+      const num = typeof v === "string" ? parseFloat(v) : v;
+      return typeof num === "number" && !isNaN(num) ? num : 0;
+    });
+
+    return {
+      chartType: (parsed.chartType || "bar") as ChartType,
+      labels: parsed.labels.map((l: unknown) => String(l)),
+      values,
+      title: parsed.title || "Chart",
+      xAxisLabel: parsed.xAxisLabel || "",
+      yAxisLabel: parsed.yAxisLabel || "",
+    };
   } catch (error) {
-    console.warn('OpenAI API error, using fallback:', error)
-    return generateChartFromPromptFallback(prompt)
+    console.warn("OpenAI API error, using fallback:", error);
+    return generateChartFromPromptFallback(prompt);
   }
 }
 
 /**
  * Fallback function that uses simple parsing and sample data
+ * Delegates to the chart fallback composable for cleaner code
  */
-function generateChartFromPromptFallback(prompt: string): AIChartResponse {
-  const parsed = parsePrompt(prompt)
-  const dataSource = parsed.product === 'Product B' ? sampleProductData : sampleSalesData
+function generateChartFromPromptFallback(prompt: string): AIWidgetResponse {
+  const parsed = parsePrompt(prompt);
   
-  let data = [...dataSource]
-  
-  // Apply month filter
-  if (parsed.filterMonths) {
-    data = data.slice(-parsed.filterMonths)
+  // Check if user wants a table
+  if (parsed.widgetType === 'table') {
+    const { generateTableFromPrompt } = useChartFallback();
+    return generateTableFromPrompt(prompt, parsed);
   }
   
-  // Extract labels and values
-  const labels = data.map(item => item.month)
-  const values = data.map(item => {
-    const value = item[parsed.dataField]
-    return typeof value === 'number' ? value : 0
-  })
-  
-  // Generate title
-  let title = `${parsed.dataField.charAt(0).toUpperCase() + parsed.dataField.slice(1)}`
-  if (parsed.product) {
-    title += ` - ${parsed.product}`
-  }
-  if (parsed.filterMonths) {
-    title += ` (Last ${parsed.filterMonths} months)`
-  }
-  
-  return {
-    chartType: parsed.chartType,
-    labels,
-    values,
-    title,
-    xAxisLabel: 'Month',
-    yAxisLabel: parsed.dataField.charAt(0).toUpperCase() + parsed.dataField.slice(1),
-  }
+  // Otherwise generate chart
+  const { generateChartFromPrompt } = useChartFallback();
+  return generateChartFromPrompt(prompt, parsed);
 }
-

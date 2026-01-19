@@ -20,6 +20,11 @@
       :data="chartData"
       :options="chartOptions"
     />
+    <Line
+      v-else-if="chartType === 'area'"
+      :data="chartData"
+      :options="areaChartOptions"
+    />
   </div>
 </template>
 
@@ -60,18 +65,39 @@ const props = defineProps<Props>()
 
 const chartType = computed(() => props.data.chartType)
 
-const chartData = computed(() => ({
-  labels: props.data.labels,
-  datasets: [
-    {
-      label: props.data.yAxisLabel || 'Value',
-      data: props.data.values,
-      backgroundColor: getBackgroundColors(),
-      borderColor: getBorderColors(),
-      borderWidth: 2,
-    },
-  ],
-}))
+const chartData = computed(() => {
+  const baseDataset = {
+    label: props.data.yAxisLabel || 'Value',
+    data: props.data.values,
+    borderColor: getBorderColors(),
+    borderWidth: 2,
+  }
+
+  // For area charts, add fill and backgroundColor
+  if (chartType.value === 'area') {
+    return {
+      labels: props.data.labels,
+      datasets: [
+        {
+          ...baseDataset,
+          backgroundColor: getBackgroundColors(),
+          fill: true,
+          tension: 0.4,
+        },
+      ],
+    }
+  }
+
+  return {
+    labels: props.data.labels,
+    datasets: [
+      {
+        ...baseDataset,
+        backgroundColor: getBackgroundColors(),
+      },
+    ],
+  }
+})
 
 const chartOptions = computed(() => ({
   responsive: true,
@@ -106,6 +132,50 @@ const chartOptions = computed(() => ({
         text: props.data.yAxisLabel,
       },
       beginAtZero: true,
+    },
+  },
+}))
+
+// Area chart options (Line chart with fill)
+const areaChartOptions = computed(() => ({
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: {
+      display: true,
+      position: 'top' as const,
+    },
+    title: {
+      display: !!props.data.title,
+      text: props.data.title,
+      font: {
+        size: 16,
+        weight: 'bold' as const,
+      },
+    },
+    tooltip: {
+      enabled: true,
+    },
+  },
+  scales: {
+    x: {
+      title: {
+        display: !!props.data.xAxisLabel,
+        text: props.data.xAxisLabel,
+      },
+    },
+    y: {
+      title: {
+        display: !!props.data.yAxisLabel,
+        text: props.data.yAxisLabel,
+      },
+      beginAtZero: true,
+    },
+  },
+  elements: {
+    line: {
+      fill: true,
+      tension: 0.4,
     },
   },
 }))
