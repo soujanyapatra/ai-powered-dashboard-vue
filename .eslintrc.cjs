@@ -37,6 +37,6 @@ module.exports = {
     '@typescript-eslint/no-explicit-any': 'warn',
     'no-console': ['warn', { allow: ['warn', 'error'] }],
   },
-  ignorePatterns: ['dist/**', 'node_modules/**', '*.config.js', '*.config.ts', '.vite/**'],
+  ignorePatterns: ['dist/**', 'node_modules/**', '*.config.js', '*.config.ts', '.vite/**', 'test-*.js'],
 }
 
